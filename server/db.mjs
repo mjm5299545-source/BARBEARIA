@@ -1,0 +1,37 @@
+import {DatabaseSync} from 'node:sqlite';
+import {mkdirSync,chmodSync} from 'node:fs';
+import path from 'node:path';
+export const dataDir=path.resolve(process.env.DATA_DIR||'data');
+mkdirSync(dataDir,{recursive:true,mode:0o700});
+export const db=new DatabaseSync(path.join(dataDir,'grecco.sqlite'));
+chmodSync(path.join(dataDir,'grecco.sqlite'),0o600);
+db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'admin');
+CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),csrf TEXT NOT NULL,expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS services(id TEXT PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL,price INTEGER,duration INTEGER NOT NULL,kind TEXT NOT NULL DEFAULT 'individual',items TEXT NOT NULL DEFAULT '[]',image TEXT NOT NULL DEFAULT '',active INTEGER NOT NULL DEFAULT 1,position INTEGER NOT NULL DEFAULT 0,configured INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS barbers(id TEXT PRIMARY KEY,name TEXT NOT NULL,services TEXT NOT NULL DEFAULT '[]',active INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS working_hours(id TEXT PRIMARY KEY,barber_id TEXT NOT NULL REFERENCES barbers(id),day INTEGER NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS time_blocks(id TEXT PRIMARY KEY,barber_id TEXT NOT NULL REFERENCES barbers(id),start TEXT NOT NULL,end TEXT NOT NULL,reason TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS appointments(id TEXT PRIMARY KEY,reference TEXT UNIQUE NOT NULL,token_hash TEXT UNIQUE NOT NULL,customer TEXT NOT NULL,phone TEXT NOT NULL,barber_id TEXT NOT NULL REFERENCES barbers(id),services TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,total INTEGER,status TEXT NOT NULL,source TEXT NOT NULL,notes TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS appointments_overlap ON appointments(barber_id,start,end,status);
+CREATE INDEX IF NOT EXISTS blocks_overlap ON time_blocks(barber_id,start,end);
+CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS gallery_images(id TEXT PRIMARY KEY,url TEXT NOT NULL,alt TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS content_draft(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL);
+`);
+if(!db.prepare('PRAGMA table_info(services)').all().some(c=>c.name==='featured'))db.exec('ALTER TABLE services ADD COLUMN featured INTEGER NOT NULL DEFAULT 0');
+if(!db.prepare('PRAGMA table_info(barbers)').all().some(c=>c.name==='photo'))db.exec("ALTER TABLE barbers ADD COLUMN photo TEXT NOT NULL DEFAULT ''");
+const initial={brand:'Grecco',latitude:-10.216057,longitude:-36.8375574,heroTitle:'Seu estilo.\nSua assinatura.',primaryCta:'Agendar meu horário',secondaryCta:'Conhecer os serviços',heroSubtitle:'Mais que um corte, um momento seu. Cuidado, precisão e personalidade em cada detalhe.',aboutTitle:'O cuidado que o seu estilo merece.',aboutText:'Um espaço para desacelerar, renovar o visual e se sentir bem. Na Grecco, cada atendimento começa com uma conversa e atenção ao que faz você ser você.',address:'Rua Dom José Tomás, 754',city:'Propriá – SE',postcode:'49900-000',whatsapp:'',instagram:'',phone:'',privacyContact:'',hoursLabel:'Horários em breve',onlineEnabled:false,minNoticeMinutes:120,maxDays:30,cancelHours:12,bufferMinutes:0,slotMinutes:15,retentionDays:180,accent:'#C6A45E',heroImage:'/images/hero.webp',logo:'',contentProvisional:true};
+if(!db.prepare('SELECT id FROM settings').get()){
+ db.prepare('INSERT INTO settings VALUES(1,?)').run(JSON.stringify(initial));
+ const add=db.prepare('INSERT INTO services(id,name,description,price,duration,kind,items,image,position) VALUES(?,?,?,?,?,?,?,?,?)');
+ add.run('corte','Corte','Um corte que acompanha sua personalidade. Do clássico ao contemporâneo.',null,40,'individual','[]','',0);
+ add.run('barba','Barba','Contornos precisos e cuidado para valorizar o seu visual.',null,30,'individual','[]','',1);
+ add.run('sobrancelha','Sobrancelha','Pequenos detalhes que fazem toda a diferença.',null,15,'individual','[]','',2);
+ add.run('combo','Corte + barba','A combinação completa para renovar o visual em um só momento.',null,70,'combo','["corte","barba"]','',3);
+}
+export const settings=()=>({...initial,...JSON.parse(db.prepare('SELECT value FROM settings WHERE id=1').get().value)});
+export const uid=()=>crypto.randomUUID();
+export const parseService=s=>({...s,items:JSON.parse(s.items),active:!!s.active,configured:!!s.configured,featured:!!s.featured});
+export const allServices=()=>db.prepare('SELECT * FROM services ORDER BY position,name').all().map(parseService);
+export const allBarbers=()=>db.prepare('SELECT * FROM barbers').all().map(b=>({...b,active:!!b.active,services:JSON.parse(b.services),hours:db.prepare('SELECT * FROM working_hours WHERE barber_id=? ORDER BY day,start').all(b.id)}));

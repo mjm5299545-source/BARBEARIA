@@ -1,0 +1,12 @@
+import {backup} from 'node:sqlite';
+import {mkdirSync,cpSync,existsSync,chmodSync} from 'node:fs';
+import path from 'node:path';
+import {db,dataDir} from '../server/db.mjs';
+const root=path.resolve(process.env.BACKUP_DIR||'backups');
+if(root===dataDir||root.startsWith(path.join(dataDir,'uploads')+path.sep))throw new Error('Escolha um destino de backup fora da pasta de uploads.');
+mkdirSync(root,{recursive:true,mode:0o700});
+const target=path.join(root,new Date().toISOString().replaceAll(':','-')+'-'+crypto.randomUUID().slice(0,6));
+mkdirSync(target,{mode:0o700});
+await backup(db,path.join(target,'grecco.sqlite'));chmodSync(path.join(target,'grecco.sqlite'),0o600);
+if(existsSync(path.join(dataDir,'uploads')))cpSync(path.join(dataDir,'uploads'),path.join(target,'uploads'),{recursive:true});
+console.log('Backup local criado em '+target+'. Guarde uma cópia em armazenamento privado e teste a restauração.');
