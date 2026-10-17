@@ -1,6 +1,12 @@
 # Barbearia Grecco
 
-Site e plataforma de agendamento da Barbearia Grecco, em Propriá–SE. Interface em React + TypeScript, API Express em Node 24 e SQLite persistente. Site, administração e dados usam o mesmo backend. Nenhum serviço pago externo é necessário para reservas ou autenticação.
+Site e plataforma de agendamento da Barbearia Grecco, em Propriá–SE. Interface em React + TypeScript, API Express em Node 24, PostgreSQL na Vercel e SQLite no desenvolvimento local. Site, administração e dados usam o mesmo backend. Na Vercel, a persistência usa um banco externo, como Neon, e as fotos usam Vercel Blob. Confira os limites e custos dos planos escolhidos.
+
+## Publicação na Vercel
+
+Siga o [guia passo a passo da Vercel](docs/VERCEL.md). O projeto inclui `vercel.json`, frontend estático e handler serverless. Conecte um PostgreSQL e Vercel Blob, configure `DATABASE_URL`, `BLOB_READ_WRITE_TOKEN`, `APP_ORIGIN` e a chave temporária `SETUP_TOKEN`, faça Redeploy e abra `/admin` para criar a primeira conta pelo navegador.
+
+O site público abre durante a preparação. A agenda permanece desativada e a saúde do banco retorna 503 enquanto a conexão não existir. Não há banco ou uploads gravados no disco efêmero da Vercel.
 
 ## Executar em desenvolvimento
 
@@ -15,7 +21,7 @@ O Vite usa a porta **5173**, e a API, **3001**. O Vite encaminha `/api` e `/uplo
 
 ## Primeiro acesso seguro
 
-Não existe usuário ou senha padrão, cadastro administrativo público ou credencial embutida. Crie a primeira conta no terminal do servidor:
+Não existe usuário ou senha padrão nem credencial embutida. Na Vercel, use o assistente em `/admin` com a chave temporária protegida `SETUP_TOKEN`, conforme o guia. Para desenvolvimento ou um servidor próprio, crie a conta no terminal:
 
 ```sh
 npm run admin:setup
@@ -37,11 +43,11 @@ Depois, acesse `/admin` e siga esta ordem:
 - Site responsivo em preto e dourado, fontes locais, menu acessível, filtros de serviços, fotos ampliáveis, localização com mapa carregado por solicitação, política de privacidade e preferências de movimento reduzido.
 - Reserva de um ou mais serviços ou combo, profissional compatível, data/horário disponível, nome e telefone validados, revisão e confirmação com referência.
 - Horários respeitam expediente, pausas, bloqueios, duração, antecedência, limite de dias, passo da agenda e intervalo entre clientes. Combos não podem ser combinados com componentes repetidos.
-- Transações `BEGIN IMMEDIATE` serializam criação/remarcação no SQLite, verificando conflitos novamente dentro da transação. Duas reservas simultâneas não ocupam a mesma disponibilidade. Cancelamento libera o horário. Datas são salvas em UTC e apresentadas em `America/Sao_Paulo`; os horários de expediente usam o horário de Brasília.
+- Transações serializam criação/remarcação: `BEGIN IMMEDIATE` no SQLite e bloqueio por profissional no PostgreSQL. O PostgreSQL também tem uma restrição de exclusão que impede sobreposição de reservas mesmo por gravação direta. Duas reservas simultâneas não ocupam a mesma disponibilidade. Cancelamento libera o horário. Datas são salvas em UTC e apresentadas em `America/Sao_Paulo`; os horários de expediente usam o horário de Brasília.
 - Link privado em `/reserva#TOKEN` permite consultar, cancelar e remarcar até o prazo configurado. O token aleatório tem 256 bits e apenas seu hash é armazenado. O link deve ser salvo pelo cliente; não enviamos notificações nem prometemos recuperação automática por telefone. Dados pessoais e notas não são retornados na consulta pública.
 - Painel com indicadores calculados das reservas reais, agenda diária/semanal/mensal e em lista, busca, filtros, reserva manual ou confirmada pelo WhatsApp, remarcação, cancelamento, conclusão e notas internas. A tela carrega até as 5.000 reservas mais recentes. Não há indicador de faturamento estimado.
-- Upload autenticado de JPG, PNG e WebP de até 5 MB, leitura e verificação real da imagem, limite de pixels, orientação automática, redução para até 1.920 px e conversão WebP sem metadados. SVG e arquivos inválidos são rejeitados.
-- Login com scrypt e sal aleatório, sessão opaca com validade de oito horas e hash no banco, autorização de administrador em todas as operações restritas, cookie HttpOnly/SameSite e Secure em produção, token CSRF, verificação de origem, SQL parametrizado, cabeçalhos de segurança e limites de tentativas em rotas sensíveis.
+- Upload autenticado de JPG, PNG e WebP de até 4 MB, leitura e verificação real da imagem, limite de pixels, orientação automática, redução para até 1.920 px e conversão WebP sem metadados. SVG e arquivos inválidos são rejeitados.
+- Login com scrypt e sal aleatório, sessão opaca com validade de oito horas e hash no banco, autorização de administrador em todas as operações restritas, cookie HttpOnly/SameSite e Secure em produção, token CSRF, verificação de origem, SQL parametrizado, cabeçalhos de segurança e limites de tentativas persistentes no banco nas rotas sensíveis, compartilhados entre instâncias.
 - Retenção configurável: botão no painel remove nome, telefone e notas de reservas encerradas antigas. É uma operação deliberada do responsável, não uma rotina automática. O canal de privacidade pode ser cadastrado; sem ele, o aviso orienta contato presencial.
 
 ## WhatsApp e integrações
@@ -58,11 +64,11 @@ npm test
 npm audit --omit=dev --cache /tmp/grecco-npm-cache
 ```
 
-O build inclui TypeScript. `npm test` executa testes da API e testes reais de navegador com Playwright/Chromium. O executável padrão é `/usr/bin/chromium`; ajuste `CHROMIUM_PATH` se necessário. A suíte utiliza bancos temporários e credenciais aleatórias, removidos ao terminar. Ela cobre concorrência, persistência, autorização/CSRF, intervalos, bloqueios, prazo de alterações, snapshots de preço, combos, uploads, edição/publicação e o fluxo do cliente no desktop e na navegação mobile. Testes não substituem uma revisão de produção do domínio, HTTPS, backup e contatos oficiais.
+O build inclui TypeScript. `npm test` executa testes da API e testes reais de navegador com Playwright/Chromium. O executável padrão é `/usr/bin/chromium`; ajuste `CHROMIUM_PATH` se necessário. A suíte utiliza bancos temporários e credenciais aleatórias, removidos ao terminar. Se `TEST_DATABASE_URL` for fornecida por um mecanismo seguro, a mesma suíte usa schemas descartáveis `grecco_test_*` no PostgreSQL. Nunca aponte testes para uma conta de produção. Ela cobre concorrência, persistência, autorização/CSRF, intervalos, bloqueios, prazo de alterações, snapshots de preço, combos, uploads, edição/publicação e o fluxo do cliente no desktop e na navegação mobile. Testes não substituem uma revisão de produção do domínio, HTTPS, backup e contatos oficiais.
 
-## Publicar com persistência
+## Publicar em servidor próprio (alternativa à Vercel)
 
-A aplicação precisa de um **servidor Node com disco persistente**, ou container com volume. Hospedagem apenas estática e funções sem disco persistente não atendem ao banco SQLite deste projeto.
+O modo local SQLite exige um **servidor Node com disco persistente**, ou container com volume. Na Vercel, use PostgreSQL e Blob conforme o guia: o disco local não é utilizado. Hospedagem apenas estática não executa a API.
 
 ```sh
 npm ci --cache /tmp/grecco-npm-cache
@@ -83,29 +89,31 @@ Em produção, a API serve também o frontend em `dist/`, incluindo `/admin` e `
 
 O arquivo `.env.example` documenta as variáveis, mas não é carregado automaticamente. Use as configurações seguras da hospedagem ou o suporte `--env-file` do Node. Não exponha `data/` como pasta estática; apenas `data/uploads/` é servido pela rota dedicada.
 
-O `Dockerfile` fornece build em etapas, execução sem root e healthcheck. Exemplo de construção: `docker build -t grecco .`. Monte um volume em `/app/data`, configure as variáveis da hospedagem e termine TLS no proxy. A imagem não inclui credenciais. O Dockerfile está preparado; o build Docker não foi executado neste ambiente.
+O `Dockerfile` fornece build em etapas, execução sem root e healthcheck. Exemplo de construção: `docker build -t grecco .`. Monte um volume em `/app/data`, configure as variáveis da hospedagem e termine TLS no proxy. A imagem não inclui credenciais. O Dockerfile está preparado; o build Docker não foi executado neste ambiente. Ao usar essa alternativa, copie também `migrations/` para a imagem, conforme o Dockerfile.
 
-Use uma única instância da aplicação sobre um volume local. SQLite com WAL é apropriado para esta operação de pequeno porte; para múltiplas réplicas ou volume de rede, migre o banco para um servidor transacional e mantenha as regras de conflito. Os limites de tentativas em memória também devem ir para armazenamento compartilhado nessa expansão.
+Use uma única instância da aplicação sobre um volume local. SQLite com WAL é apropriado para esta operação de pequeno porte; para múltiplas réplicas ou volume de rede, migre o banco para um servidor transacional e mantenha as regras de conflito. Os limites de tentativas já usam o banco compartilhado.
 
-## Backup e restauração
+## Backup e restauração do SQLite local
 
 ```sh
 npm run db:backup
 ```
 
-O script usa a API de backup do SQLite para produzir uma cópia consistente, incluindo dados em WAL, e copia uploads para uma pasta privada com data. Mantenha uma cópia criptografada fora da máquina e verifique periodicamente a restauração. Não envie backups para o Git: contêm dados pessoais e hashes de autenticação.
+No desenvolvimento local, o script usa a API de backup do SQLite para produzir uma cópia consistente, incluindo dados em WAL, e copia uploads para uma pasta privada com data. Mantenha uma cópia criptografada fora da máquina e verifique periodicamente a restauração. Não envie backups para o Git: contêm dados pessoais e hashes de autenticação.
 
-Para restaurar, pare os processos da aplicação, preserve o estado atual, substitua o arquivo `grecco.sqlite` e a pasta `uploads` por uma cópia de backup confiável e remova os arquivos WAL/SHM antigos **somente com os processos parados e o estado preservado**. Reinicie e valide a saúde, o login e uma consulta de reserva. A perda do banco implica perda de reservas e contas; não use discos efêmeros na publicação.
+Para restaurar, pare os processos da aplicação, preserve o estado atual, substitua o arquivo `grecco.sqlite` e a pasta `uploads` por uma cópia de backup confiável e remova os arquivos WAL/SHM antigos **somente com os processos parados e o estado preservado**. Reinicie e valide a saúde, o login e uma consulta de reserva. A perda do banco implica perda de reservas e contas. Para PostgreSQL/Blob, use os backups e exportações dos provedores, conforme o guia da Vercel.
 
 ## Organização
 
 - `src/Public.tsx`, `src/Booking.tsx`: site público e fluxos de reserva.
 - `src/admin/`: login, indicadores e gestão da operação.
-- `server/db.mjs`: estrutura e inicialização do SQLite.
+- `server/db.mjs`, `migrations/`: conexões, inicialização versionada e transações PostgreSQL/SQLite.
+- `api/index.mjs`, `vercel.json`: função e roteamento da Vercel.
+- `server/storage.mjs`: uploads locais ou Vercel Blob, com referências persistentes.
 - `server/booking.mjs`: disponibilidade e transações de reserva.
 - `server/index.mjs`, `server/security.mjs`: API, autenticação, validações e uploads.
 - `scripts/`: criação segura de administrador e backup.
 - `tests/`: integração e testes de navegador.
 - `public/images/`: imagens ilustrativas geradas para a apresentação. Não são fotos reais da Barbearia Grecco; substitua-as pelo painel. Fontes Cormorant Garamond e DM Sans distribuídas via Fontsource sob SIL Open Font License, com licença nos pacotes correspondentes.
 
-O código foi preparado e validado neste ambiente. Configurar o domínio, cadastrar os dados oficiais, criar a conta do responsável e publicar no provedor escolhido são etapas posteriores; não houve implantação em uma hospedagem pública.
+O código foi preparado e validado neste ambiente, com SQLite, PostgreSQL real e o handler serverless. A conexão ao Neon e ao Blob da sua conta depende das variáveis configuradas na Vercel. Configurar o domínio, cadastrar os dados oficiais, criar a conta do responsável e publicar no provedor escolhido são etapas posteriores; não houve implantação em uma hospedagem pública.

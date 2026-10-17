@@ -6,3 +6,6 @@ data/
 playwright-report/
 test-results/
 backups/
+.env.*
+!.env.example
+.vercel/

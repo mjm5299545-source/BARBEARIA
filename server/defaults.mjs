@@ -1,0 +1,9 @@
+export const initial={brand:'Grecco',latitude:-10.216057,longitude:-36.8375574,heroTitle:'Seu estilo.\nSua assinatura.',primaryCta:'Agendar meu horário',secondaryCta:'Conhecer os serviços',heroSubtitle:'Mais que um corte, um momento seu. Cuidado, precisão e personalidade em cada detalhe.',aboutTitle:'O cuidado que o seu estilo merece.',aboutText:'Um espaço para desacelerar, renovar o visual e se sentir bem. Na Grecco, cada atendimento começa com uma conversa e atenção ao que faz você ser você.',address:'Rua Dom José Tomás, 754',city:'Propriá – SE',postcode:'49900-000',whatsapp:'',instagram:'',phone:'',privacyContact:'',hoursLabel:'Horários em breve',onlineEnabled:false,minNoticeMinutes:120,maxDays:30,cancelHours:12,bufferMinutes:0,slotMinutes:15,retentionDays:180,accent:'#C6A45E',heroImage:'/images/hero.webp',logo:'',contentProvisional:true};
+
+export const seedServices=[
+ {id:'corte',name:'Corte',description:'Um corte que acompanha sua personalidade. Do clássico ao contemporâneo.',price:null,duration:40,kind:'individual',items:[],image:'',active:true,position:0,configured:false,featured:false},
+ {id:'barba',name:'Barba',description:'Contornos precisos e cuidado para valorizar o seu visual.',price:null,duration:30,kind:'individual',items:[],image:'',active:true,position:1,configured:false,featured:false},
+ {id:'sobrancelha',name:'Sobrancelha',description:'Pequenos detalhes que fazem toda a diferença.',price:null,duration:15,kind:'individual',items:[],image:'',active:true,position:2,configured:false,featured:false},
+ {id:'combo',name:'Corte + barba',description:'A combinação completa para renovar o visual em um só momento.',price:null,duration:70,kind:'combo',items:['corte','barba'],image:'',active:true,position:3,configured:false,featured:false}
+];
+export const pendingPublicData=()=>({settings:{...initial},services:structuredClone(seedServices),barbers:[],gallery:[]});
