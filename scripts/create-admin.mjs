@@ -1,3 +1,5 @@
+import {supabaseMode} from '../server/auth-config.mjs';
+if(supabaseMode()){console.error('No Supabase, crie a conta em Authentication → Users e autorize o primeiro acesso em /admin. Este comando é exclusivo do modo local.');process.exit(1);}
 import { db, uid } from '../server/db.mjs';
 import { passwordHash } from '../server/security.mjs';
 const email = process.env.ADMIN_EMAIL?.trim().toLowerCase(), password = process.env.ADMIN_PASSWORD;

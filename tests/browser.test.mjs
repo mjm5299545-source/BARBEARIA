@@ -16,7 +16,7 @@ const { app } = await import('../server/index.mjs');
 const password = randomBytes(24).toString('hex');
 const barberId = uid();
 const date = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-await db.prepare('INSERT INTO users VALUES(?,?,?,?)').run(uid(), 'owner@example.test', passwordHash(password), 'admin');
+await db.prepare('INSERT INTO users(id,email,password,role) VALUES(?,?,?,?)').run(uid(), 'owner@example.test', passwordHash(password), 'admin');
 await db.prepare('UPDATE services SET configured=1').run();
 await db.prepare('INSERT INTO barbers(id,name,services,active) VALUES(?,?,?,?)').run(barberId, 'Profissional de teste', '["corte","barba","sobrancelha","combo"]', 1);
 await db.prepare('INSERT INTO working_hours VALUES(?,?,?,?,?)').run(uid(), barberId, new Date(date + 'T12:00:00Z').getUTCDay(), '09:00', '18:00');

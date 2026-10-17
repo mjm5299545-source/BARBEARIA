@@ -1,10 +1,10 @@
 # Barbearia Grecco
 
-Site e plataforma de agendamento da Barbearia Grecco, em Propriá–SE. Interface em React + TypeScript, API Express em Node 24, PostgreSQL na Vercel e SQLite no desenvolvimento local. Site, administração e dados usam o mesmo backend. Na Vercel, a persistência usa um banco externo, como Neon, e as fotos usam Vercel Blob. Confira os limites e custos dos planos escolhidos.
+Site e plataforma de agendamento da Barbearia Grecco, em Propriá–SE. Interface em React + TypeScript, API Express em Node 24, Supabase Auth/PostgreSQL na Vercel e SQLite no desenvolvimento local. Site, administração e dados usam o mesmo backend. Na Vercel, contas e dados usam um projeto Supabase exclusivo da Grecco e as fotos usam Vercel Blob. Confira os limites e custos dos planos escolhidos.
 
 ## Publicação na Vercel
 
-Siga o [guia passo a passo da Vercel](docs/VERCEL.md). O projeto inclui `vercel.json`, frontend estático e handler serverless. Conecte um PostgreSQL e Vercel Blob, configure `DATABASE_URL`, `BLOB_READ_WRITE_TOKEN`, `APP_ORIGIN` e a chave temporária `SETUP_TOKEN`, faça Redeploy e abra `/admin` para criar a primeira conta pelo navegador.
+Siga o [guia Supabase exclusivo](docs/SUPABASE.md) e o [guia da Vercel](docs/VERCEL.md). Crie um projeto novo, execute migrations com uma conexão administrativa temporária e configure no servidor a conexão restrita, Supabase Auth, criptografia de sessão e Blob. Depois de Redeploy, autorize a conta criada no Supabase pelo assistente `/admin`. Não use o banco do outro site.
 
 O site público abre durante a preparação. A agenda permanece desativada e a saúde do banco retorna 503 enquanto a conexão não existir. Não há banco ou uploads gravados no disco efêmero da Vercel.
 
@@ -21,7 +21,7 @@ O Vite usa a porta **5173**, e a API, **3001**. O Vite encaminha `/api` e `/uplo
 
 ## Primeiro acesso seguro
 
-Não existe usuário ou senha padrão nem credencial embutida. Na Vercel, use o assistente em `/admin` com a chave temporária protegida `SETUP_TOKEN`, conforme o guia. Para desenvolvimento ou um servidor próprio, crie a conta no terminal:
+Não existe usuário ou senha padrão nem credencial embutida. Na Vercel, crie e confirme a conta em Supabase Authentication → Users, com cadastro público desativado, e autorize o primeiro administrador em `/admin` com a chave temporária `SETUP_TOKEN`, conforme o guia. Senhas são verificadas pelo Supabase Auth. Os comandos abaixo são exclusivos do modo local. Para desenvolvimento ou um servidor próprio, crie a conta no terminal:
 
 ```sh
 npm run admin:setup
@@ -45,9 +45,11 @@ Depois, acesse `/admin` e siga esta ordem:
 - Horários respeitam expediente, pausas, bloqueios, duração, antecedência, limite de dias, passo da agenda e intervalo entre clientes. Combos não podem ser combinados com componentes repetidos.
 - Transações serializam criação/remarcação: `BEGIN IMMEDIATE` no SQLite e bloqueio por profissional no PostgreSQL. O PostgreSQL também tem uma restrição de exclusão que impede sobreposição de reservas mesmo por gravação direta. Duas reservas simultâneas não ocupam a mesma disponibilidade. Cancelamento libera o horário. Datas são salvas em UTC e apresentadas em `America/Sao_Paulo`; os horários de expediente usam o horário de Brasília.
 - Link privado em `/reserva#TOKEN` permite consultar, cancelar e remarcar até o prazo configurado. O token aleatório tem 256 bits e apenas seu hash é armazenado. O link deve ser salvo pelo cliente; não enviamos notificações nem prometemos recuperação automática por telefone. Dados pessoais e notas não são retornados na consulta pública.
-- Painel com indicadores calculados das reservas reais, agenda diária/semanal/mensal e em lista, busca, filtros, reserva manual ou confirmada pelo WhatsApp, remarcação, cancelamento, conclusão e notas internas. A tela carrega até as 5.000 reservas mais recentes. Não há indicador de faturamento estimado.
+- Painel com indicadores calculados das reservas reais, agenda diária/semanal/mensal e em lista, busca, filtros, reserva manual ou confirmada pelo WhatsApp, remarcação, cancelamento, conclusão e notas internas. A tela carrega até as 5.000 reservas mais recentes; os indicadores usam agregações do banco inteiro. O histórico de um cliente mostra até 1.000 atendimentos e a lista de clientes usa páginas de 50 registros. O painel atualiza a cada 30 segundos quando está visível. Não há indicador de faturamento estimado.
 - Upload autenticado de JPG, PNG e WebP de até 4 MB, leitura e verificação real da imagem, limite de pixels, orientação automática, redução para até 1.920 px e conversão WebP sem metadados. SVG e arquivos inválidos são rejeitados.
-- Login com scrypt e sal aleatório, sessão opaca com validade de oito horas e hash no banco, autorização de administrador em todas as operações restritas, cookie HttpOnly/SameSite e Secure em produção, token CSRF, verificação de origem, SQL parametrizado, cabeçalhos de segurança e limites de tentativas persistentes no banco nas rotas sensíveis, compartilhados entre instâncias.
+- Em produção, login Supabase Auth com autorização administrativa independente dos metadados da conta, verificação de identidade e renovação de token no servidor. Access/refresh tokens são cifrados com AES-256-GCM no banco e nunca enviados ao navegador. O modo local usa scrypt e sal aleatório. Há sessão opaca com validade de oito horas e hash no banco, autorização de administrador em todas as operações restritas, cookie HttpOnly/SameSite e Secure em produção, token CSRF, verificação de origem, SQL parametrizado, cabeçalhos de segurança e limites de tentativas persistentes no banco nas rotas sensíveis, compartilhados entre instâncias.
+- Clientes cadastrados a partir das reservas, busca por nome/telefone, histórico e edição de dados permitidos, exclusivamente no painel. Dados antigos dos atendimentos são preservados.
+- RLS obrigatório nas tabelas do schema privado, sem acesso anon/authenticated e com conexão de servidor sem BYPASSRLS. Migrations não são executadas com a conexão da aplicação.
 - Retenção configurável: botão no painel remove nome, telefone e notas de reservas encerradas antigas. É uma operação deliberada do responsável, não uma rotina automática. O canal de privacidade pode ser cadastrado; sem ele, o aviso orienta contato presencial.
 
 ## WhatsApp e integrações
@@ -65,6 +67,10 @@ npm audit --omit=dev --cache /tmp/grecco-npm-cache
 ```
 
 O build inclui TypeScript. `npm test` executa testes da API e testes reais de navegador com Playwright/Chromium. O executável padrão é `/usr/bin/chromium`; ajuste `CHROMIUM_PATH` se necessário. A suíte utiliza bancos temporários e credenciais aleatórias, removidos ao terminar. Se `TEST_DATABASE_URL` for fornecida por um mecanismo seguro, a mesma suíte usa schemas descartáveis `grecco_test_*` no PostgreSQL. Nunca aponte testes para uma conta de produção. Ela cobre concorrência, persistência, autorização/CSRF, intervalos, bloqueios, prazo de alterações, snapshots de preço, combos, uploads, edição/publicação e o fluxo do cliente no desktop e na navegação mobile. Testes não substituem uma revisão de produção do domínio, HTTPS, backup e contatos oficiais.
+
+`npm run test:postgres` faz build, inicia PostgreSQL e Supabase Auth reais em containers Docker isolados, executa a suíte completa e remove seus containers e volumes. O daemon Docker deve estar disponível; as imagens vêm dos repositórios oficiais e os segredos de teste são gerados a cada execução.
+
+A suíte adicional `tests/supabase.test.mjs` exige PostgreSQL e GoTrue **reais**, locais e descartáveis. Configure `TEST_SUPABASE_DATABASE_URL`, `TEST_SUPABASE_AUTH_URL` e `TEST_SUPABASE_JWT_SECRET` por variáveis seguras; sem esses serviços, os sete testes são explicitamente marcados como não executados. O banco deve se chamar `grecco_auth_test` ou `grecco_test_*`, no loopback. A suíte cria/apaga apenas seu schema Grecco e as duas contas criadas para validação. Não use bancos com dados reais. O gateway local dos testes apenas encaminha HTTP ao GoTrue; não simula autenticação.
 
 ## Publicar em servidor próprio (alternativa à Vercel)
 
@@ -116,4 +122,4 @@ Para restaurar, pare os processos da aplicação, preserve o estado atual, subst
 - `tests/`: integração e testes de navegador.
 - `public/images/`: imagens ilustrativas geradas para a apresentação. Não são fotos reais da Barbearia Grecco; substitua-as pelo painel. Fontes Cormorant Garamond e DM Sans distribuídas via Fontsource sob SIL Open Font License, com licença nos pacotes correspondentes.
 
-O código foi preparado e validado neste ambiente, com SQLite, PostgreSQL real e o handler serverless. A conexão ao Neon e ao Blob da sua conta depende das variáveis configuradas na Vercel. Configurar o domínio, cadastrar os dados oficiais, criar a conta do responsável e publicar no provedor escolhido são etapas posteriores; não houve implantação em uma hospedagem pública.
+Consulte o [relatório de validação](docs/VALIDACAO.md) para os resultados executados e os limites da entrega. A conexão ao projeto Supabase exclusivo e ao Blob da sua conta depende das variáveis configuradas na Vercel. Configurar o domínio, cadastrar os dados oficiais, criar a conta do responsável e publicar no provedor escolhido são etapas posteriores; não houve implantação em uma hospedagem pública.

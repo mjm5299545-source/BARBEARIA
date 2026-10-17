@@ -3,11 +3,9 @@ import {readFileSync,mkdirSync,chmodSync} from 'node:fs';
 import path from 'node:path';
 import {initial,seedServices} from './defaults.mjs';
 
-export class ConfigurationError extends Error {
-  constructor(message='Conecte um banco PostgreSQL ao projeto da Vercel e configure DATABASE_URL.') {
-    super(message); this.code='SETUP_REQUIRED'; this.status=503;
-  }
-}
+import {ConfigurationError} from './errors.mjs';
+import {supabaseMode,checkProjectDatabase} from './auth-config.mjs';
+export {ConfigurationError};
 export const dataDir=path.resolve(process.env.DATA_DIR||'data');
 export const isVercel=process.env.VERCEL==='1';
 export const databaseConfigured=()=>!!process.env.DATABASE_URL||!isVercel;
@@ -43,14 +41,24 @@ async function initialize(){
   const {Pool}=await import('pg');
   let url;try{url=new URL(process.env.DATABASE_URL);}catch{throw new ConfigurationError('DATABASE_URL precisa ser uma conexão PostgreSQL válida.');}
   if(!['postgres:','postgresql:'].includes(url.protocol))throw new ConfigurationError('Use uma conexão PostgreSQL em DATABASE_URL.');
+  if(supabaseMode())checkProjectDatabase(url);
   const local=['127.0.0.1','localhost','[::1]'].includes(url.hostname);
   if(!local&&['disable','allow','prefer'].includes(url.searchParams.get('sslmode')))throw new ConfigurationError('O banco externo exige TLS com verificação de certificado.');
   for(const key of ['sslcert','sslkey','sslrootcert'])if(url.searchParams.has(key))throw new ConfigurationError('Configure certificados personalizados em PG_CA_CERT, sem opções TLS na URL.');
   url.searchParams.delete('sslmode');url.searchParams.delete('uselibpqcompat');
-  pool=new Pool({connectionString:url.toString(),max:3,idleTimeoutMillis:10000,connectionTimeoutMillis:10000,allowExitOnIdle:true,options:`-c search_path=${schema},public`,ssl:local?false:{rejectUnauthorized:true,...(process.env.PG_CA_CERT?{ca:process.env.PG_CA_CERT}:{})}});
+  pool=new Pool({connectionString:url.toString(),max:3,idleTimeoutMillis:10000,connectionTimeoutMillis:10000,allowExitOnIdle:true,options:`-c search_path=${schema},public,extensions`,ssl:local?false:{rejectUnauthorized:true,...(process.env.PG_CA_CERT?{ca:process.env.PG_CA_CERT}:{})}});
   pool.on('error',()=>console.error('Conexão PostgreSQL interrompida.'));
   const client=await pool.connect();
   try{
+   if(supabaseMode()&&process.env.DATABASE_MIGRATING!=='1'){
+    const installed=(await client.query("SELECT to_regclass('schema_migrations') AS name")).rows[0].name;
+    if(!installed)throw new ConfigurationError('Execute as migrations no projeto exclusivo da Grecco antes de publicar.');
+    const version=await client.query('SELECT version FROM schema_migrations WHERE version=3');
+    if(!version.rows.length)throw new ConfigurationError('Execute as migrations no projeto exclusivo da Grecco antes de publicar.');
+    const role=(await client.query('SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0];
+    if(role.rolsuper||role.rolbypassrls)throw new ConfigurationError('A aplicação exige um usuário de banco restrito, sem BYPASSRLS.');
+    return;
+   }
    await client.query('BEGIN');
    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['grecco-database-migrations']);
    await client.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
@@ -62,6 +70,12 @@ async function initialize(){
     await seed(client);
     await client.query('INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT DO NOTHING');
    }
+   for(const [number,file] of [[2,'002-postgres.sql'],...(supabaseMode()?[[3,'003-supabase.sql']]:[])]){
+    if(!(await client.query('SELECT version FROM schema_migrations WHERE version=$1',[number])).rows.length){
+     await client.query(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+     await client.query('INSERT INTO schema_migrations(version) VALUES($1)',[number]);
+    }
+   }
    await client.query('COMMIT');
   }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
  }else{
@@ -71,6 +85,13 @@ async function initialize(){
   sqlite.exec(readFileSync(new URL('../migrations/sqlite.sql',import.meta.url),'utf8'));
   if(!sqlite.prepare('PRAGMA table_info(services)').all().some(c=>c.name==='featured'))sqlite.exec('ALTER TABLE services ADD COLUMN featured INTEGER NOT NULL DEFAULT 0');
   if(!sqlite.prepare('PRAGMA table_info(barbers)').all().some(c=>c.name==='photo'))sqlite.exec("ALTER TABLE barbers ADD COLUMN photo TEXT NOT NULL DEFAULT ''");
+  for(const [table,column,definition] of [['users','auth_user_id','TEXT'],['sessions','provider_data','TEXT'],['sessions','provider_expires','BIGINT'],['appointments','customer_id','TEXT REFERENCES customers(id)']]){
+   if(!sqlite.prepare('PRAGMA table_info('+table+')').all().some(c=>c.name===column))sqlite.exec('ALTER TABLE '+table+' ADD COLUMN '+column+' '+definition);
+  }
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS customers(id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT UNIQUE NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+   CREATE INDEX IF NOT EXISTS appointments_customer ON appointments(customer_id,start);
+   INSERT OR IGNORE INTO customers(id,name,phone,created_at,updated_at) SELECT id,customer,phone,created_at,updated_at FROM appointments WHERE length(phone) BETWEEN 10 AND 15 ORDER BY created_at DESC;
+   UPDATE appointments SET customer_id=(SELECT id FROM customers WHERE customers.phone=appointments.phone) WHERE customer_id IS NULL;`);
   if(!sqlite.prepare('SELECT id FROM settings').get())await context.run(sqlite,()=>seed());
  }
 }

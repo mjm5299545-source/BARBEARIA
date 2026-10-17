@@ -42,9 +42,12 @@ export async function book(input,{manual=false,exclude=null}={}){
   const now=new Date().toISOString(),total=services.every(s=>s.price!==null)?services.reduce((n,s)=>n+s.price,0):null;
   const storedEnd=new Date(Date.parse(slot.end)+config.bufferMinutes*60000).toISOString();
   const snapshot=JSON.stringify(services.map(s=>({id:s.id,name:s.name,duration:s.duration,price:s.price})));
-  if(exclude){await db.prepare('UPDATE appointments SET barber_id=?,services=?,start=?,end=?,total=?,status=?,updated_at=? WHERE id=?').run(input.barberId,snapshot,slot.start,storedEnd,total,'confirmed',now,exclude);return {id:exclude};}
+  if(exclude){const updated=await db.prepare("UPDATE appointments SET barber_id=?,services=?,start=?,end=?,total=?,status=?,updated_at=? WHERE id=? AND status='confirmed'").run(input.barberId,snapshot,slot.start,storedEnd,total,'confirmed',now,exclude);if(!updated.changes)throw new Problem('Este agendamento não pode mais ser alterado.',409);return {id:exclude};}
+  const candidate=uid();
+  await db.prepare('INSERT INTO customers(id,name,phone,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(phone) DO NOTHING').run(candidate,input.customer,input.phone,now,now);
+  const customerId=(await db.prepare('SELECT id FROM customers WHERE phone=?').get(input.phone)).id;
   const token=randomToken(),id=uid(),reference='GR-'+randomToken().slice(0,8).toUpperCase();
-  await db.prepare('INSERT INTO appointments(id,reference,token_hash,customer,phone,barber_id,services,start,end,total,status,source,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,reference,hashToken(token),input.customer,input.phone,input.barberId,snapshot,slot.start,storedEnd,total,'confirmed',manual?(input.source||'manual'):'site',manual?(input.notes||''):'',now,now);
+  await db.prepare('INSERT INTO appointments(id,reference,token_hash,customer,phone,barber_id,services,start,end,total,status,source,notes,created_at,updated_at,customer_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,reference,hashToken(token),input.customer,input.phone,input.barberId,snapshot,slot.start,storedEnd,total,'confirmed',manual?(input.source||'manual'):'site',manual?(input.notes||''):'',now,now,customerId);
   return {id,reference,token,start:slot.start,total};
  });
 }

@@ -1,3 +1,5 @@
+import {supabaseMode} from '../server/auth-config.mjs';
+if(supabaseMode()){console.error('No Supabase, crie a conta em Authentication → Users e autorize o primeiro acesso em /admin. Este comando é exclusivo do modo local.');process.exit(1);}
 import { createInterface } from 'node:readline/promises';
 import { db, uid } from '../server/db.mjs';
 import { passwordHash } from '../server/security.mjs';

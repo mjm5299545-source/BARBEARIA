@@ -15,7 +15,8 @@
     "admin:setup": "node scripts/setup-admin.mjs",
     "db:backup": "node scripts/backup.mjs",
     "vercel-build": "npm run build",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "test:postgres": "npm run build && node scripts/test-postgres.mjs"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",

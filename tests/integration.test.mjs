@@ -14,7 +14,7 @@ const { db, uid } = await import('../server/db.mjs');
 const { passwordHash } = await import('../server/security.mjs');
 const { app } = await import('../server/index.mjs');
 const password = randomBytes(24).toString('hex');
-await db.prepare('INSERT INTO users VALUES(?,?,?,?)').run(uid(), 'admin@example.test', passwordHash(password), 'admin');
+await db.prepare('INSERT INTO users(id,email,password,role) VALUES(?,?,?,?)').run(uid(), 'admin@example.test', passwordHash(password), 'admin');
 let server, base, cookie, csrf, config, barberId, reservation, day, service;
 before(async () => { server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r)); base = `http://127.0.0.1:${server.address().port}`; day = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10); });
 after(async () => { await new Promise(r => server.close(r)); if(process.env.TEST_DATABASE_URL)await db.dropTestSchema();await db.close(); rmSync(directory, { recursive: true, force: true }); });
